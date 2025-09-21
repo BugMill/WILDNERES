@@ -298,6 +298,9 @@ AnimatorStateTransition:
     m_ConditionEvent: Speed
 =======
     m_ConditionEvent: MoveSpeed
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
     m_EventTreshold: 0.1
   m_DstStateMachine: {fileID: 0}
