@@ -1,69 +1,145 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
-#if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
-#endif
 
-[RequireComponent(typeof(CharacterController))]
 public class PlayerController : MonoBehaviour
 {
     [Header("Movement Settings")]
-    public float walkSpeed = 5f;
-    public float runSpeed = 9f;
-    public float jumpForce = 8f;
-    public float gravity = 9.81f;
-
-    private CharacterController controller;
-    private Vector2 moveInput;
-    private Vector3 velocity;
-    private bool isRunning;
+    public float moveSpeed = 5f;
+    public float groundCheckDistance = 0.1f;
+    public LayerMask groundLayer;
+    
+    [Header("Physics Settings")]
+    public float playerMass = 70f; // Масса игрока в кг
+    public float gravity = 9.81f; // Сила гравитации
+    
+    private PlayerInputActions playerInputActions;
+    private Vector2 movementInput;
+    private CharacterController characterController;
+    private bool isGrounded;
+    private float verticalVelocity; // Вертикальная скорость для гравитации
 
     private void Awake()
     {
-        controller = GetComponent<CharacterController>();
+        // Настройка CharacterController
+        characterController = GetComponent<CharacterController>();
+        if (characterController == null)
+        {
+            characterController = gameObject.AddComponent<CharacterController>();
+            characterController.height = 2f;
+            characterController.radius = 0.5f;
+            characterController.center = new Vector3(0f, 1f, 0f);
+        }
+        
+        playerInputActions = new PlayerInputActions();
+        
+        Debug.Log($"Масса игрока установлена: {playerMass} кг");
+    }
+
+    private void OnEnable()
+    {
+        playerInputActions?.Player.Enable();
+    }
+
+    private void OnDisable()
+    {
+        playerInputActions?.Player.Disable();
     }
 
     private void Update()
     {
+        // Получаем ввод движения
+        movementInput = playerInputActions.Player.Move.ReadValue<Vector2>();
+        
+        // Проверяем землю под ногами
+        CheckGrounded();
+        
+        // Обрабатываем гравитацию
+        HandleGravity();
+        
+        // Обрабатываем движение
         HandleMovement();
+    }
+
+    private void HandleGravity()
+    {
+        if (isGrounded)
+        {
+            // Если на земле, сбрасываем вертикальную скорость (но немного прижимаем к земле)
+            verticalVelocity = -0.5f;
+        }
+        else
+        {
+            // Если в воздухе, применяем гравитацию
+            verticalVelocity -= gravity * Time.deltaTime;
+            
+            // Ограничиваем максимальную скорость падения
+            verticalVelocity = Mathf.Clamp(verticalVelocity, -20f, 10f);
+        }
+        
+        // Применяем вертикальное движение
+        Vector3 verticalMovement = new Vector3(0, verticalVelocity, 0) * Time.deltaTime;
+        characterController.Move(verticalMovement);
     }
 
     private void HandleMovement()
     {
-        // Получаем ввод
-        Vector3 move = transform.right * moveInput.x + transform.forward * moveInput.y;
-        float speed = isRunning ? runSpeed : walkSpeed;
-        controller.Move(move * speed * Time.deltaTime);
-
-        // Гравитация
-        if (controller.isGrounded && velocity.y < 0)
-            velocity.y = -2f; // маленькая сила, чтобы оставаться на земле
-        else
-            velocity.y -= gravity * Time.deltaTime;
-
-        controller.Move(velocity * Time.deltaTime);
+        if (movementInput.magnitude > 0.1f)
+        {
+            // Движение относительно направления игрока (уже повернут камерой)
+            Vector3 moveDirection = transform.forward * movementInput.y + transform.right * movementInput.x;
+            Vector3 movement = moveDirection * moveSpeed * Time.deltaTime;
+            
+            // Применяем горизонтальное движение
+            characterController.Move(movement);
+        }
     }
 
-    public void OnMove(InputValue value)
+    private void CheckGrounded()
     {
-        moveInput = value.Get<Vector2>();
+        // Проверяем, стоит ли игрок на земле
+        isGrounded = characterController.isGrounded;
+        
+        // Дополнительная проверка лучом для точности
+        RaycastHit hit;
+        Vector3 rayStart = transform.position;
+        bool raycastGrounded = Physics.Raycast(rayStart, Vector3.down, out hit, 
+            characterController.height / 2 + groundCheckDistance, groundLayer);
+        
+        // Если CharacterController говорит что мы на земле, но луч нет - доверяем CharacterController
+        // И наоборот
+        if (isGrounded != raycastGrounded)
+        {
+            isGrounded = isGrounded; // Приоритет CharacterController
+        }
+        
+        // Визуализация в редакторе
+        Debug.DrawRay(rayStart, Vector3.down * (characterController.height / 2 + groundCheckDistance), 
+                     isGrounded ? Color.green : Color.red);
     }
 
-    public void OnJump()
+    // Метод для получения массы игрока
+    public float GetPlayerMass()
     {
-        if (controller.isGrounded)
-            velocity.y = jumpForce;
+        return playerMass;
     }
 
-    public void OnRun(InputValue value)
+    // Метод для изменения массы (если нужно)
+    public void SetPlayerMass(float newMass)
     {
-        isRunning = value.isPressed;
+        if (newMass > 0)
+        {
+            playerMass = newMass;
+            Debug.Log($"Масса игрока изменена: {playerMass} кг");
+        }
     }
 
-    // Метод для анимации
-    public bool IsRunning()
+    // Для отладки
+    private void OnGUI()
     {
-        return isRunning;
+        GUI.Label(new Rect(10, 10, 300, 20), $"Move Input: {movementInput}");
+        GUI.Label(new Rect(10, 30, 300, 20), $"Grounded: {isGrounded}");
+        GUI.Label(new Rect(10, 50, 300, 20), $"Vertical Velocity: {verticalVelocity:F2}");
+        GUI.Label(new Rect(10, 70, 300, 20), $"Mass: {playerMass} kg");
+        GUI.Label(new Rect(10, 90, 300, 20), $"Position: {transform.position}");
     }
-}
+}   
